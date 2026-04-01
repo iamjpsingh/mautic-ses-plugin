@@ -1,16 +1,36 @@
 # Mautic Amazon SES Plugin
 
-Adds bounce, complaint, and delivery tracking for Amazon SES via SNS webhooks. Works with Symfony's built-in SES transport (`symfony/amazon-mailer`).
+[![Latest Version](https://img.shields.io/packagist/v/iamjpsingh/mautic-ses-plugin.svg)](https://packagist.org/packages/iamjpsingh/mautic-ses-plugin)
+[![License](https://img.shields.io/packagist/l/iamjpsingh/mautic-ses-plugin.svg)](https://packagist.org/packages/iamjpsingh/mautic-ses-plugin)
+[![PHP Version](https://img.shields.io/packagist/php-v/iamjpsingh/mautic-ses-plugin.svg)](https://packagist.org/packages/iamjpsingh/mautic-ses-plugin)
+
+Amazon SES webhook handler plugin for **Mautic 6+**. Automatically tracks bounces, complaints, deliveries, and more via AWS SNS webhooks. Marks contacts as **Do Not Contact** on hard bounces and spam complaints.
+
+Works with Symfony's built-in SES transport (`symfony/amazon-mailer`) — no custom transport needed.
+
+## Credits
+
+This plugin is based on the amazing work by **[@pm-pmaas](https://github.com/pm-pmaas)** and their original [etailors/mautic-amazon-ses](https://github.com/pm-pmaas/etailors_amazon_ses) plugin. Huge thanks to them for building the foundation!
+
+The original plugin supports Mautic 4/5. This version has been **rewritten and upgraded** for Mautic 6+ with:
+- Full support for **all 10 SES event types** (not just bounce/complaint/delivery)
+- **SES v1 + v2** payload format support
+- Email address parsing fix for SES `"Display Name" <email>` format
+- SNS `UnsubscribeConfirmation` handling
+- Modern PHP 8.2+ strict typing
+- **Composer/Packagist** ready for easy installation
+
+---
 
 ## Requirements
 
 - Mautic 6.x / 7.x+
 - PHP 8.2+
-- `symfony/amazon-mailer` package installed
-- AWS account with SES access
+- `symfony/amazon-mailer` package
+- AWS account with SES and SNS access
 - SES verified domain or email address
 
-## Installation via Composer (Recommended)
+## Installation
 
 ```bash
 composer require iamjpsingh/mautic-ses-plugin
@@ -18,43 +38,79 @@ php bin/console cache:clear
 php bin/console mautic:plugins:reload
 ```
 
-## Manual Installation
+That's it! The plugin is ready to use.
 
-```bash
-# 1. Install the Symfony SES mailer package
-composer require symfony/amazon-mailer
+## Quick Start Guide
 
-# 2. Copy plugin to plugins directory
-cp -r MauticAmazonSesBundle /path/to/mautic/plugins/
+### Step 1: Create IAM Access Keys
 
-# 3. Clear cache and reload plugins
-php bin/console cache:clear
-php bin/console mautic:plugins:reload
-```
+1. Go to **AWS Console > IAM > Users**
+2. Select or create a user with SES permissions
+3. Go to **Security credentials > Create access key**
+4. Save the **Access Key ID** and **Secret Access Key**
 
-Or use the UI: **Settings > Plugins > "Install/Upgrade Plugins"** after copying files.
 
-## Configuration via UI
+### Step 2: Configure Mautic Email Settings
 
-Go to **Settings > Email Settings > Email DSN** and fill in:
+Go to **Mautic > Settings > Email Settings** and configure:
 
 | Field | Value |
 |---|---|
 | **Scheme** | `ses+api` |
 | **Host** | `default` |
-| **User** | Your AWS Access Key ID (e.g. `AKIAIOSFODNN7EXAMPLE`) |
+| **User** | Your AWS Access Key ID |
 | **Password** | Your AWS Secret Access Key |
-| **Options** | Key: `region`, Value: your AWS region (e.g. `us-east-1`, `eu-west-1`, `ap-south-1`) |
+| **Options** | Key: `region`, Value: your AWS region (e.g. `us-east-1`, `ap-south-1`) |
 
-Click **Save** and use the **"Send Test Email"** button to verify.
+![alt text](api-setup.png)
 
-## Configuration via config/local.php
+Click **Save** and **Send Test Email** to verify.
+
+### Step 3: Create SNS Topic
+
+1. Go to **AWS SNS Console > Topics > Create topic**
+2. Select **Standard** type
+3. Name it `mautic-ses-notifications`
+4. Click **Create topic**
+
+
+### Step 4: Create SNS Subscription
+
+1. Inside the topic, click **Create subscription**
+2. Set:
+   - **Protocol**: HTTPS
+   - **Endpoint**: `https://your-domain.com/mailer/callback`
+3. Click **Create subscription**
+4. The plugin **auto-confirms** the subscription
+
+
+### Step 5: Connect SES to SNS
+
+1. Go to **SES > Identities > your-domain > Notifications tab**
+2. Click **Edit** on **Feedback notifications**
+3. Set your SNS topic for **Bounce**, **Complaint**, and **Delivery**
+4. Enable **Include original email headers**
+5. Click **Save**
+
+
+### Step 6: Test It!
+
+1. Create a contact in Mautic with email: `bounce@simulator.amazonses.com`
+2. Send an email to that contact
+3. The contact should be marked as **Do Not Contact (Bounced)**
+
+![alt text](testing.png
+)
+
+## Alternative Configuration Methods
+
+### Via config/local.php
 
 ```php
 'mailer_dsn' => 'ses+api://ACCESS_KEY:SECRET_KEY@default?region=us-east-1',
 ```
 
-## Configuration via Environment Variable
+### Via Environment Variable
 
 ```bash
 MAILER_DSN=ses+api://ACCESS_KEY:SECRET_KEY@default?region=us-east-1
@@ -64,64 +120,29 @@ MAILER_DSN=ses+api://ACCESS_KEY:SECRET_KEY@default?region=us-east-1
 
 | Scheme | Protocol | Use case |
 |---|---|---|
-| `ses+api` | SES v2 HTTPS API | Recommended - fastest |
+| `ses+api` | SES v2 HTTPS API | **Recommended** - fastest |
 | `ses+https` | SES v2 HTTPS | Alternative API method |
 | `ses+smtp` | SMTP via SES | Use if API access is restricted |
 | `ses` | Default (same as `ses+smtp`) | Fallback |
 
-## AWS Setup for Bounce/Complaint Tracking
+## Supported SES Event Types
 
-### Step 1: Create SNS Topic
-
-1. Go to **AWS SNS Console**
-2. Create a new topic (e.g., `mautic-ses-notifications`)
-3. Note the Topic ARN
-
-### Step 2: Subscribe to SNS Topic
-
-Create an HTTPS subscription pointing to your Mautic webhook:
-
-```
-https://your-domain.com/mailer/callback
-```
-
-The plugin automatically confirms the SNS subscription.
-
-### Step 3: Configure SES Notifications
-
-1. Go to **AWS SES Console > Verified Identities**
-2. Select your verified domain/email
-3. Go to **Notifications** tab
-4. Set **Bounce**, **Complaint**, and **Delivery** notifications to your SNS topic
-
-### Step 4: (Recommended) Create Configuration Set
-
-1. Go to **SES > Configuration Sets**
-2. Create a new set (e.g., `mautic-tracking`)
-3. Add an **SNS event destination** for all event types: Bounce, Complaint, Delivery, Reject, Send, Open, Click, DeliveryDelay, Rendering Failure, and Subscription
-4. Add `configuration_set` to your DSN options in the UI
-
-## How It Works
-
-### Sending
-Handled by Symfony's built-in `SesTransportFactory` from the `symfony/amazon-mailer` package.
-
-### Supported SES Event Types
+All 10 SES event types are handled:
 
 | Event Type | Action | Description |
 |---|---|---|
-| **Bounce** | Marks contact as **Do Not Contact (Bounced)** | Hard/soft bounce with diagnostics |
+| **Bounce** | Marks contact as **Do Not Contact (Bounced)** | Hard/soft bounce with full diagnostics |
 | **Complaint** | Marks contact as **Do Not Contact (Unsubscribed)** | Spam complaint from recipient |
 | **Delivery** | Logged | Successful delivery confirmation |
-| **Reject** | Marks contact as **Do Not Contact (Bounced)** | SES rejected the email (e.g., virus) |
+| **Reject** | Marks contact as **Do Not Contact (Bounced)** | SES rejected the email (e.g., virus detected) |
 | **Send** | Logged | SES accepted the email for delivery |
 | **Open** | Logged | Recipient opened the email |
 | **Click** | Logged | Recipient clicked a link |
-| **DeliveryDelay** | Logged as warning | Temporary delivery delay (mailbox full, etc.) |
+| **DeliveryDelay** | Logged as warning | Temporary delay (mailbox full, etc.) |
 | **Rendering Failure** | Logged as error | SES template rendering failed |
 | **Subscription** | Logged | Recipient changed subscription preferences |
 
-### SNS Message Types
+## SNS Message Types
 
 | Type | Action |
 |---|---|
@@ -130,6 +151,15 @@ Handled by Symfony's built-in `SesTransportFactory` from the `symfony/amazon-mai
 | **Notification** | Unwrapped and processed as SES event |
 
 Supports both **SES v1** (`notificationType`) and **SES v2** (`eventType`) payload formats.
+
+## Advanced: Configuration Set (Optional)
+
+For tracking Open, Click, and other v2 events, create a Configuration Set:
+
+1. Go to **SES > Configuration Sets > Create**
+2. Name it `mautic-tracking`
+3. Add an **SNS event destination** for all event types
+4. Add `configuration_set=mautic-tracking` to your DSN options
 
 ## Webhook Endpoint
 
@@ -143,23 +173,42 @@ Accepts:
 - SNS Notification wrapping SES events
 - Direct SES event JSON
 
+## SES Simulator Addresses (For Testing)
+
+| Address | Simulates |
+|---|---|
+| `bounce@simulator.amazonses.com` | Hard bounce |
+| `complaint@simulator.amazonses.com` | Spam complaint |
+| `success@simulator.amazonses.com` | Successful delivery |
+| `suppressionlist@simulator.amazonses.com` | Suppression list bounce |
+| `ooto@simulator.amazonses.com` | Out of office (soft bounce) |
+
 ## Troubleshooting
 
 ### "Unsupported scheme ses+api" error
-Run: `composer require symfony/amazon-mailer`
-
-### Test email works but campaign sending doesn't
-- Check SES sending limits in AWS console
-- Verify you're out of the SES sandbox (or recipients are verified)
+```bash
+composer require symfony/amazon-mailer
+```
 
 ### Bounces not being recorded
-- Verify SNS subscription is confirmed (check AWS SNS console)
-- Check that the webhook URL is publicly accessible
-- Check Mautic logs at `var/logs/`
+- Verify SNS subscription is **Confirmed** in AWS SNS Console
+- Check SES Notifications tab - is your SNS topic selected for Bounce/Complaint/Delivery?
+- Check webhook URL is publicly accessible
+- Check Mautic logs: `var/logs/mautic_*.php`
+
+### Test email works but campaign emails don't
+- Check SES sending limits in AWS Console
+- Verify you're out of the SES sandbox (or recipients are verified)
+
+### Plugin not showing in Mautic
+```bash
+php bin/console cache:clear
+php bin/console mautic:plugins:reload
+```
 
 ## IAM Policy
 
-Minimum required IAM permissions:
+Minimum required IAM permissions for sending:
 
 ```json
 {
@@ -169,7 +218,9 @@ Minimum required IAM permissions:
             "Effect": "Allow",
             "Action": [
                 "ses:SendEmail",
-                "ses:SendRawEmail"
+                "ses:SendRawEmail",
+                "ses:GetSendStatistics",
+                "ses:GetSendQuota"
             ],
             "Resource": "*"
         }
@@ -177,6 +228,14 @@ Minimum required IAM permissions:
 }
 ```
 
+## Contributing
+
+Found a bug? Have a suggestion? Please [open an issue](https://github.com/iamjpsingh/mautic-ses-plugin/issues) or submit a pull request.
+
 ## License
 
 GPL-3.0-or-later
+
+---
+
+**Made with love for the Mautic community. Special thanks to [@pm-pmaas](https://github.com/pm-pmaas) for the original [etailors/mautic-amazon-ses](https://github.com/pm-pmaas/etailors_amazon_ses) plugin that made this possible.**
